@@ -1,0 +1,101 @@
+import SwiftUI
+
+struct ContentView: View {
+    @EnvironmentObject var serverManager: ServerManager
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section("Server") {
+                    HStack {
+                        Circle()
+                            .fill(serverManager.isRunning ? .green : .red)
+                            .frame(width: 10, height: 10)
+                        Text(serverManager.isRunning ? "Running" : "Stopped")
+                            .font(.headline)
+                    }
+
+                    if !serverManager.serverURL.isEmpty {
+                        HStack {
+                            Text(serverManager.serverURL)
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Button(action: {
+                                UIPasteboard.general.string = serverManager.serverURL
+                            }) {
+                                Image(systemName: "doc.on.doc")
+                            }
+                        }
+                    }
+                }
+
+                Section("HealthKit") {
+                    HStack {
+                        Text("Authorization")
+                        Spacer()
+                        Text(serverManager.healthKit.isAuthorized ? "Granted" : "Not Granted")
+                            .foregroundColor(serverManager.healthKit.isAuthorized ? .green : .orange)
+                    }
+
+                    if let lastBG = serverManager.healthKit.lastBackgroundDelivery {
+                        HStack {
+                            Text("Last Background Update")
+                            Spacer()
+                            Text(lastBG, style: .relative)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    if let error = serverManager.healthKit.authorizationError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+
+                Section("Bluetooth") {
+                    HStack {
+                        Text("BLE Peripheral")
+                        Spacer()
+                        Text(serverManager.isBLEAdvertising ? "Advertising" : "Off")
+                            .foregroundColor(serverManager.isBLEAdvertising ? .green : .secondary)
+                    }
+                    HStack {
+                        Text("Connected Centrals")
+                        Spacer()
+                        Text("\(serverManager.bleConnectedCentrals)")
+                            .foregroundColor(serverManager.bleConnectedCentrals > 0 ? .green : .secondary)
+                    }
+                }
+
+                Section("Bonjour") {
+                    HStack {
+                        Text("Discovery")
+                        Spacer()
+                        Text(serverManager.isBonjourAdvertising ? "Advertising" : "Off")
+                            .foregroundColor(serverManager.isBonjourAdvertising ? .green : .secondary)
+                    }
+                }
+
+                Section {
+                    Button(serverManager.isRunning ? "Stop Server" : "Start Server") {
+                        if serverManager.isRunning {
+                            serverManager.stop()
+                        } else {
+                            Task {
+                                await serverManager.start()
+                            }
+                        }
+                    }
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .navigationTitle("Data Hub")
+        }
+        .task {
+            await serverManager.start()
+        }
+    }
+}

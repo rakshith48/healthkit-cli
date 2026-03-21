@@ -1,0 +1,46 @@
+name: PersonalDataHub
+options:
+  bundleIdPrefix: com.personaldatahub
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "16.0"
+
+packages:
+  Swifter:
+    url: https://github.com/httpswift/swifter
+    from: "1.5.0"
+
+targets:
+  PersonalDataHub:
+    type: application
+    platform: iOS
+    sources:
+      - PersonalDataHub
+    settings:
+      base:
+        INFOPLIST_FILE: PersonalDataHub/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.personaldatahub.app
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+    dependencies:
+      - package: Swifter
+    entitlements:
+      path: PersonalDataHub/PersonalDataHub.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access:
+          - health-records
+
+  PersonalDataHubTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - PersonalDataHubTests
+    dependencies:
+      - target: PersonalDataHub
+    settings:
+      base:
+        SWIFT_VERSION: "5.9"
