@@ -18,8 +18,8 @@ function validateDays(value) {
 }
 
 program
-  .name("datahub")
-  .description("Query health data from your iPhone via Personal Data Hub")
+  .name("healthkit-cli")
+  .description("Query Apple HealthKit data from your iPhone")
   .version("0.1.0");
 
 // --- pair ---
