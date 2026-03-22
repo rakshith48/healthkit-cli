@@ -5,6 +5,10 @@ import { discover } from "./discover.js";
 import { discoverBLE } from "./ble.js";
 import { query, status } from "./client.js";
 import { pair } from "./auth.js";
+import { existsSync, mkdirSync, copyFileSync } from "fs";
+import { homedir } from "os";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
 const program = new Command();
 
@@ -21,6 +25,30 @@ program
   .name("healthkit-cli")
   .description("Query Apple HealthKit data from your iPhone")
   .version("0.1.0");
+
+// --- install-skill ---
+program
+  .command("install-skill")
+  .description("Install the /health skill for Claude Code")
+  .action(() => {
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const source = join(__dirname, "..", "skills", "health", "SKILL.md");
+    const destDir = join(homedir(), ".claude", "skills", "health");
+    const dest = join(destDir, "SKILL.md");
+
+    if (!existsSync(source)) {
+      console.log(JSON.stringify({ error: "SKILL.md not found in package" }));
+      process.exit(1);
+    }
+
+    mkdirSync(destDir, { recursive: true, mode: 0o700 });
+    copyFileSync(source, dest);
+    console.log(JSON.stringify({
+      installed: true,
+      path: dest,
+      message: "Claude Code skill installed. Use /health in Claude Code to query health data."
+    }, null, 2));
+  });
 
 // --- pair ---
 program

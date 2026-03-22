@@ -102,10 +102,10 @@ healthkit-cli status
 
 ## Claude Code Integration
 
-Drop the included skill into your project:
+Install the `/health` skill:
 
 ```bash
-cp -r .claude/skills/health ~/.claude/skills/
+healthkit-cli install-skill
 ```
 
 Then ask Claude: *"How did I sleep this week?"* — it will use `healthkit-cli` automatically.

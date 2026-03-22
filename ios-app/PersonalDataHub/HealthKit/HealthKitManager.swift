@@ -36,7 +36,6 @@ class HealthKitManager: ObservableObject {
     @Published var lastBackgroundDelivery: Date?
 
     private var observerQueries: [HKObserverQuery] = []
-    private var cacheUpdateScheduled = false
 
     func requestAuthorization() async {
         guard HKHealthStore.isHealthDataAvailable() else {
@@ -58,12 +57,12 @@ class HealthKitManager: ObservableObject {
     private func enableBackgroundDelivery() {
         // Enable background delivery for key metrics
         // iOS will wake the app when new data arrives from Apple Watch, Ultrahuman, etc.
+        // Observe key types to keep the app alive via background delivery.
+        // Callbacks only update the timestamp — no expensive queries.
         let backgroundTypes: [(HKObjectType, HKUpdateFrequency)] = [
-            (HKQuantityType.quantityType(forIdentifier: .heartRate)!, .immediate),
             (HKQuantityType.quantityType(forIdentifier: .stepCount)!, .hourly),
-            (HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!, .hourly),
-            (HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!, .immediate),
-            (HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!, .immediate),
+            (HKQuantityType.quantityType(forIdentifier: .heartRate)!, .hourly),
+            (HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!, .hourly),
             (HKObjectType.workoutType(), .immediate),
         ]
 
@@ -86,16 +85,11 @@ class HealthKitManager: ObservableObject {
 
                 print("[HealthKit] Background delivery fired for \(type.identifier) at \(Date())")
 
-                // Debounce: multiple observers fire at once, only update cache once
-                Task { @MainActor [weak self] in
-                    guard let self, !self.cacheUpdateScheduled else { return }
-                    self.cacheUpdateScheduled = true
-                    self.lastBackgroundDelivery = Date()
-
-                    // Wait 2 seconds for other observers to fire, then update once
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
-                    self.cacheUpdateScheduled = false
-                    await self.updateCache()
+                // Just update the timestamp — don't run queries here.
+                // BLE and HTTP serve live data on demand. The observer
+                // keeps the app alive; no need to eagerly cache.
+                DispatchQueue.main.async { [weak self] in
+                    self?.lastBackgroundDelivery = Date()
                 }
 
                 // MUST call completion handler or iOS stops delivering
