@@ -4,7 +4,7 @@ import { dirname, join } from "path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BLE_CLIENT = join(__dirname, "ble_client.py");
-const PYTHON = "/opt/homebrew/bin/python3.11";
+const PYTHON = process.env.PYTHON_PATH || "python3";
 
 /**
  * Query health data via BLE.
@@ -17,7 +17,7 @@ export function queryBLE(command) {
     execFile(PYTHON, [BLE_CLIENT, command], { timeout: 20000 }, (err, stdout, stderr) => {
       if (err) {
         resolve({
-          error: `BLE query failed: ${err.message}`,
+          error: "BLE query failed",
           _source: "ble_error",
         });
         return;
@@ -26,7 +26,7 @@ export function queryBLE(command) {
         resolve(JSON.parse(stdout));
       } catch {
         resolve({
-          error: `BLE returned invalid JSON: ${stdout.slice(0, 200)}`,
+          error: "BLE returned invalid response",
           _source: "ble_error",
         });
       }

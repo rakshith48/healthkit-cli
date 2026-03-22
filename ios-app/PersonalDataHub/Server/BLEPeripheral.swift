@@ -131,9 +131,6 @@ class BLEPeripheral: NSObject, ObservableObject {
                 case "status":
                     result = [
                         "online": true,
-                        "device": UIDevice.current.name,
-                        "ios_version": UIDevice.current.systemVersion,
-                        "healthkit_authorized": hk.isAuthorized,
                         "ble": true,
                         "timestamp": ISO8601DateFormatter().string(from: Date())
                     ] as [String: Any]
@@ -186,7 +183,8 @@ class BLEPeripheral: NSObject, ObservableObject {
 
                 self.sendResponse(result)
             } catch {
-                self.sendResponse(["error": error.localizedDescription])
+                print("[BLE] Query error: \(error)")
+                self.sendResponse(["error": "Query failed"])
             }
         }
     }
@@ -331,7 +329,6 @@ extension BLEPeripheral: CBPeripheralManagerDelegate {
         if request.characteristic.uuid == BLEConstants.statusUUID {
             let status: [String: Any] = [
                 "online": true,
-                "device": "iPhone",
                 "ble": true
             ]
             if let data = try? JSONSerialization.data(withJSONObject: status) {

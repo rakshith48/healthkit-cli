@@ -4,13 +4,31 @@ import { Command } from "commander";
 import { discover } from "./discover.js";
 import { discoverBLE } from "./ble.js";
 import { query, status } from "./client.js";
+import { pair } from "./auth.js";
 
 const program = new Command();
+
+function validateDays(value) {
+  const n = parseInt(value, 10);
+  if (isNaN(n) || n < 1 || n > 365) {
+    console.log(JSON.stringify({ error: "days must be between 1 and 365" }));
+    process.exit(1);
+  }
+  return String(n);
+}
 
 program
   .name("datahub")
   .description("Query health data from your iPhone via Personal Data Hub")
   .version("0.1.0");
+
+// --- pair ---
+program
+  .command("pair")
+  .description("Pair with your iPhone using the 6-digit code shown in the app")
+  .action(async () => {
+    await pair();
+  });
 
 // --- discover ---
 program
@@ -57,11 +75,12 @@ health
   .description("Get daily health summary")
   .option("--days <n>", "Number of days", "7")
   .action(async (opts) => {
+    const days = validateDays(opts.days);
     const result = await query(
       "/health/summary",
-      { days: opts.days },
+      { days },
       "summary",
-      `summary:${opts.days}`
+      `summary:${days}`
     );
     console.log(JSON.stringify(result, null, 2));
   });
@@ -82,11 +101,12 @@ for (const [name, desc, apiType] of METRICS) {
     .description(desc)
     .option("--days <n>", "Number of days", "7")
     .action(async (opts) => {
+      const days = validateDays(opts.days);
       const result = await query(
         "/health/metrics",
-        { type: apiType, days: opts.days },
+        { type: apiType, days },
         name,
-        `${apiType}:${opts.days}`
+        `${apiType}:${days}`
       );
       console.log(JSON.stringify(result, null, 2));
     });
@@ -97,11 +117,12 @@ health
   .description("Recent workouts (type, duration, calories)")
   .option("--days <n>", "Number of days", "30")
   .action(async (opts) => {
+    const days = validateDays(opts.days);
     const result = await query(
       "/health/workouts",
-      { days: opts.days },
+      { days },
       "workouts",
-      `workouts:${opts.days}`
+      `workouts:${days}`
     );
     console.log(JSON.stringify(result, null, 2));
   });

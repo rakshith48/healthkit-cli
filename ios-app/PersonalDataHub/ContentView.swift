@@ -30,6 +30,42 @@ struct ContentView: View {
                     }
                 }
 
+                Section("Pairing") {
+                    HStack {
+                        Text("Pairing Code")
+                        Spacer()
+                        Text(serverManager.auth.pairingCode)
+                            .font(.system(.title2, design: .monospaced))
+                            .fontWeight(.bold)
+                            .foregroundColor(.blue)
+                    }
+
+                    Button("Generate New Code") {
+                        serverManager.auth.regeneratePairingCode()
+                    }
+
+                    if !serverManager.auth.pairedDevices.isEmpty {
+                        ForEach(serverManager.auth.pairedDevices) { device in
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(device.name)
+                                        .font(.subheadline)
+                                    Text(device.pairedAt, style: .relative)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Button(role: .destructive) {
+                                    serverManager.auth.revokeDevice(device)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.red)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Section("HealthKit") {
                     HStack {
                         Text("Authorization")
@@ -66,15 +102,6 @@ struct ContentView: View {
                         Spacer()
                         Text("\(serverManager.bleConnectedCentrals)")
                             .foregroundColor(serverManager.bleConnectedCentrals > 0 ? .green : .secondary)
-                    }
-                }
-
-                Section("Bonjour") {
-                    HStack {
-                        Text("Discovery")
-                        Spacer()
-                        Text(serverManager.isBonjourAdvertising ? "Advertising" : "Off")
-                            .foregroundColor(serverManager.isBonjourAdvertising ? .green : .secondary)
                     }
                 }
 

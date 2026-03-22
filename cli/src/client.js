@@ -1,6 +1,7 @@
 import { getPhoneAddress } from "./config.js";
 import { writeCache, readCache } from "./cache.js";
 import { queryBLE } from "./ble.js";
+import { getToken } from "./auth.js";
 
 const TIMEOUT_MS = 3000;
 
@@ -10,14 +11,25 @@ async function fetchFromPhone(path) {
     throw new Error("Phone address not configured. Run 'datahub discover' first.");
   }
 
+  const token = getToken();
+  if (!token) {
+    throw new Error("Not paired. Run 'datahub pair' first.");
+  }
+
   const url = `http://${addr.ip}:${addr.port}${path}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 401) {
+      throw new Error("Authentication failed. Run 'datahub pair' to re-authenticate.");
+    }
     if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      throw new Error("Request failed");
     }
     return await res.json();
   } finally {

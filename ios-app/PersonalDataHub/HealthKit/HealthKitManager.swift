@@ -36,6 +36,7 @@ class HealthKitManager: ObservableObject {
     @Published var lastBackgroundDelivery: Date?
 
     private var observerQueries: [HKObserverQuery] = []
+    private var cacheUpdateScheduled = false
 
     func requestAuthorization() async {
         guard HKHealthStore.isHealthDataAvailable() else {
@@ -85,10 +86,16 @@ class HealthKitManager: ObservableObject {
 
                 print("[HealthKit] Background delivery fired for \(type.identifier) at \(Date())")
 
-                // Update the cache with latest data
+                // Debounce: multiple observers fire at once, only update cache once
                 Task { @MainActor [weak self] in
-                    self?.lastBackgroundDelivery = Date()
-                    await self?.updateCache()
+                    guard let self, !self.cacheUpdateScheduled else { return }
+                    self.cacheUpdateScheduled = true
+                    self.lastBackgroundDelivery = Date()
+
+                    // Wait 2 seconds for other observers to fire, then update once
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    self.cacheUpdateScheduled = false
+                    await self.updateCache()
                 }
 
                 // MUST call completion handler or iOS stops delivering
@@ -100,12 +107,13 @@ class HealthKitManager: ObservableObject {
         }
     }
 
-    // Called during background delivery windows to cache fresh data
+    // Called during background delivery windows to cache fresh data.
+    // Uses only 1 day of data and runs queries sequentially to minimize memory.
     func updateCache() async {
         let cacheDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("cache")
 
-        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
 
         let timestamp = ISO8601DateFormatter().string(from: Date())
 
@@ -117,10 +125,11 @@ class HealthKitManager: ObservableObject {
             }
         }
 
-        do { cacheMetric("steps", samples: try await self.querySteps(days: 7)) } catch { print("[Cache] steps: \(error)") }
-        do { cacheMetric("heart_rate", samples: try await self.queryHeartRate(days: 7)) } catch { print("[Cache] heart_rate: \(error)") }
-        do { cacheMetric("sleep", samples: try await self.querySleep(days: 7)) } catch { print("[Cache] sleep: \(error)") }
-        do { cacheMetric("hrv", samples: try await self.queryHRV(days: 7)) } catch { print("[Cache] hrv: \(error)") }
+        // Run sequentially to keep memory low (background has limited memory)
+        do { cacheMetric("steps", samples: try await self.querySteps(days: 1)) } catch { print("[Cache] steps: \(error)") }
+        do { cacheMetric("heart_rate", samples: try await self.queryHeartRate(days: 1)) } catch { print("[Cache] heart_rate: \(error)") }
+        do { cacheMetric("sleep", samples: try await self.querySleep(days: 1)) } catch { print("[Cache] sleep: \(error)") }
+        do { cacheMetric("hrv", samples: try await self.queryHRV(days: 1)) } catch { print("[Cache] hrv: \(error)") }
 
         print("[Cache] Updated at \(timestamp)")
     }

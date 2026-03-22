@@ -14,6 +14,7 @@ class ServerManager: ObservableObject {
     let httpServer = LocalHTTPServer()
     let bonjour = BonjourAdvertiser()
     let blePeripheral = BLEPeripheral()
+    let auth = AuthManager()
 
     private var cancellables = Set<AnyCancellable>()
     private var routes: Routes?
@@ -54,7 +55,7 @@ class ServerManager: ObservableObject {
     func start() async {
         await healthKit.requestAuthorization()
 
-        routes = Routes(healthKit: healthKit)
+        routes = Routes(healthKit: healthKit, auth: auth)
         httpServer.start(routes: routes!)
         bonjour.start()
 

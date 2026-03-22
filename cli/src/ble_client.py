@@ -93,18 +93,28 @@ async def query_ble(command: str, timeout=15.0):
                 result["_source"] = "ble"
                 return result
             except json.JSONDecodeError:
-                return {"error": f"Invalid JSON response ({len(response_data)} bytes)", "_source": "ble_error"}
+                return {"error": "Invalid response from device", "_source": "ble_error"}
 
-    except Exception as e:
-        return {"error": f"BLE connection failed: {str(e)}", "_source": "ble_error"}
+    except Exception:
+        return {"error": "BLE connection failed", "_source": "ble_error"}
+
+
+def validate_command(command: str) -> bool:
+    """Validate command format to prevent injection."""
+    import re
+    return bool(re.match(r'^[a-z_]+:\d{1,3}$', command) or command in ('status', 'discover'))
 
 
 async def main():
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "Usage: ble_client.py <command> (e.g., 'steps:7', 'status')"}))
+        print(json.dumps({"error": "Usage: ble_client.py <command>"}))
         sys.exit(1)
 
     command = sys.argv[1]
+
+    if not validate_command(command):
+        print(json.dumps({"error": "Invalid command format", "_source": "ble_error"}))
+        sys.exit(1)
 
     if command == "discover":
         device = await discover()
