@@ -519,10 +519,17 @@ class Routes {
                         errors.append(["id": spec.id, "error": error.localizedDescription])
                     }
                 }
+                // `enqueue` dispatches to main async. Block here until main has
+                // drained all the enqueues, then read the authoritative count.
+                // Since DispatchQueue.main is serial, this `.sync` runs after
+                // every `.async` we queued above.
+                let pendingCount = DispatchQueue.main.sync {
+                    WorkoutQueueStore.shared.pending.count
+                }
                 let response: [String: Any] = [
                     "accepted": accepted,
                     "rejected": errors,
-                    "pending_count": WorkoutQueueStore.shared.pending.count + accepted.count
+                    "pending_count": pendingCount
                 ]
                 guard let data = try? JSONSerialization.data(withJSONObject: response, options: .sortedKeys) else {
                     return .internalServerError

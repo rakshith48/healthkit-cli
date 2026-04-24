@@ -178,10 +178,16 @@ class BLEPeripheral: NSObject, ObservableObject {
                 }
             }
 
+            // Wait for the main-queue async enqueues to drain, then read the
+            // authoritative count (see HTTP handler for rationale).
+            let pendingCount = DispatchQueue.main.sync {
+                WorkoutQueueStore.shared.pending.count
+            }
+
             sendResponse([
                 "accepted": accepted,
                 "rejected": rejected,
-                "pending_count": WorkoutQueueStore.shared.pending.count + accepted.count,
+                "pending_count": pendingCount,
                 "_source": "ble"
             ] as [String: Any])
         } else {
