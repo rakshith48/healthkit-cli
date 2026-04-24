@@ -7,12 +7,17 @@ import { query, status } from "./client.js";
 import { pair } from "./auth.js";
 import { sync, watchVault } from "./vault.js";
 import { queueWorkout, listQueue, clearQueue } from "./workout.js";
-import { existsSync, mkdirSync, copyFileSync, rmSync } from "fs";
+import { existsSync, mkdirSync, copyFileSync, rmSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const program = new Command();
+
+// Keep --version in sync with package.json so releases can't drift.
+const PKG = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8")
+);
 
 function validateDays(value) {
   const n = parseInt(value, 10);
@@ -25,8 +30,8 @@ function validateDays(value) {
 
 program
   .name("healthkit-cli")
-  .description("Query Apple HealthKit data from your iPhone")
-  .version("0.1.0");
+  .description("Query Apple HealthKit data from your iPhone and push custom workouts to your Apple Watch")
+  .version(PKG.version);
 
 // --- install-skill ---
 program

@@ -1,6 +1,6 @@
 {
   "name": "healthkit-cli",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Query Apple HealthKit data from your iPhone via CLI. Works with Claude Code as an AI health data bridge.",
   "type": "module",
   "bin": {
