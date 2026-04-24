@@ -2,6 +2,7 @@ import { readFileSync } from "fs";
 import { randomUUID } from "crypto";
 import { getPhoneAddress } from "./config.js";
 import { getToken } from "./auth.js";
+import { uploadWorkoutBLE } from "./ble.js";
 
 const TIMEOUT_MS = 5000;
 
@@ -132,7 +133,9 @@ export async function queueWorkout(filePath) {
   const payload = specs.length === 1
     ? specs[0]
     : { workouts: specs };
+  const jsonPayload = JSON.stringify(payload);
 
+  // 1. Try HTTP first — fastest path, requires app foregrounded
   try {
     const result = await httpJson("POST", "/workouts/queue", payload);
     console.log(JSON.stringify({
@@ -140,11 +143,31 @@ export async function queueWorkout(filePath) {
       accepted: result.accepted ?? [],
       rejected: result.rejected ?? [],
       pending_count: result.pending_count,
+      _source: "http",
     }, null, 2));
-  } catch (err) {
-    console.log(JSON.stringify({ error: err.message }));
+    return;
+  } catch (httpErr) {
+    // 2. HTTP failed — fall through to BLE (works even when app backgrounded)
+    process.stderr.write(`[workout] HTTP unreachable (${httpErr.message}); trying BLE…\n`);
+  }
+
+  const bleResult = await uploadWorkoutBLE(jsonPayload);
+  if (bleResult.error) {
+    console.log(JSON.stringify({
+      error: bleResult.error,
+      hint: "Open Data Hub on your iPhone and/or keep Bluetooth on. For best throughput, foreground the app so HTTP can be used.",
+      _source: bleResult._source ?? "ble_error",
+    }, null, 2));
     process.exit(1);
   }
+
+  console.log(JSON.stringify({
+    sent: specs.length,
+    accepted: bleResult.accepted ?? [],
+    rejected: bleResult.rejected ?? [],
+    pending_count: bleResult.pending_count,
+    _source: "ble",
+  }, null, 2));
 }
 
 export async function listQueue() {

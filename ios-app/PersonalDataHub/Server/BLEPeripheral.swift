@@ -18,6 +18,10 @@ struct BLEConstants {
     // Control characteristic — Mac writes a request, iPhone responds via notify
     static let requestUUID = CBUUID(string: "A1B2C3D4-00FF-7890-ABCD-EF1234567890")
     static let responseUUID = CBUUID(string: "A1B2C3D4-00FE-7890-ABCD-EF1234567890")
+
+    // Workout upload — Mac writes chunked JSON payload to push WorkoutSpec(s)
+    // to the queue. Stays alive while app is backgrounded; unlike HTTP.
+    static let workoutUploadUUID = CBUUID(string: "A1B2C3D4-00FD-7890-ABCD-EF1234567890")
 }
 
 class BLEPeripheral: NSObject, ObservableObject {
@@ -30,10 +34,16 @@ class BLEPeripheral: NSObject, ObservableObject {
     private var subscribedCentrals: [CBCentral] = []
 
     private var healthKit: HealthKitManager?
+    var folderAccess: FolderAccessManager?
+    var merkleTree: MerkleTreeBuilder?
 
     // Chunked transfer state
     private var pendingResponse: Data?
     private var pendingOffset = 0
+
+    // Workout upload reassembly (writes from Mac)
+    private var workoutUpload = WorkoutUploadAssembler()
+    private let workoutUploadTimeout: TimeInterval = 10
 
     override init() {
         super.init()
@@ -100,11 +110,83 @@ class BLEPeripheral: NSObject, ObservableObject {
             permissions: [.readable]
         )
 
+        // Workout upload characteristic — Mac writes chunked JSON payloads
+        let workoutUploadChar = CBMutableCharacteristic(
+            type: BLEConstants.workoutUploadUUID,
+            properties: [.write, .writeWithoutResponse],
+            value: nil,
+            permissions: [.writeable]
+        )
+
         let service = CBMutableService(type: BLEConstants.serviceUUID, primary: true)
-        service.characteristics = [requestChar, responseChar, statusChar]
+        service.characteristics = [requestChar, responseChar, statusChar, workoutUploadChar]
         self.service = service
 
         peripheralManager.add(service)
+    }
+
+    // MARK: - Workout upload handling
+
+    private func handleWorkoutUpload(_ chunk: Data) {
+        // Reset stale uploads before accepting new bytes so a crashed client
+        // can recover on the next attempt.
+        if workoutUpload.isStale(timeout: workoutUploadTimeout) {
+            print("[BLE] Workout upload timed out — resetting buffer")
+            workoutUpload.reset()
+        }
+
+        let result = workoutUpload.receive(chunk)
+
+        switch result {
+        case .idle:
+            break
+        case .inProgress(let received, let expected):
+            print("[BLE] Workout upload progress: \(received)/\(expected)")
+        case .error(let msg):
+            print("[BLE] Workout upload error: \(msg)")
+            sendResponse(["error": msg])
+        case .complete(let payload):
+            workoutUpload.reset()
+            finalizeWorkoutUpload(payload: payload)
+        }
+    }
+
+    private func finalizeWorkoutUpload(payload: Data) {
+        print("[BLE] Workout upload complete: \(payload.count) bytes")
+
+        if #available(iOS 17.0, *) {
+            let decoder = JSONDecoder()
+            var specs: [WorkoutSpec] = []
+            if let single = try? decoder.decode(WorkoutSpec.self, from: payload) {
+                specs = [single]
+            } else if let batch = try? decoder.decode(WorkoutQueueBatch.self, from: payload) {
+                specs = batch.workouts
+            } else {
+                sendResponse(["error": "Invalid workout spec JSON"])
+                return
+            }
+
+            var accepted: [String] = []
+            var rejected: [[String: String]] = []
+            for spec in specs {
+                do {
+                    _ = try WorkoutBuilder.build(from: spec)
+                    WorkoutQueueStore.shared.enqueue(spec)
+                    accepted.append(spec.id)
+                } catch {
+                    rejected.append(["id": spec.id, "error": error.localizedDescription])
+                }
+            }
+
+            sendResponse([
+                "accepted": accepted,
+                "rejected": rejected,
+                "pending_count": WorkoutQueueStore.shared.pending.count + accepted.count,
+                "_source": "ble"
+            ] as [String: Any])
+        } else {
+            sendResponse(["error": "WorkoutKit requires iOS 17+"])
+        }
     }
 
     // MARK: - Handle requests from Mac
@@ -177,8 +259,47 @@ class BLEPeripheral: NSObject, ObservableObject {
                                 "distance_km": $0.distanceKm
                               ] }] as [String: Any]
 
+                case "merkle_root":
+                    if let mt = self.merkleTree, let root = mt.getRoot() {
+                        var count = 0
+                        func countFiles(_ n: MerkleNode) { if !n.isDir { count += 1 } else { n.children.forEach { countFiles($0) } } }
+                        countFiles(root)
+                        result = ["hash": root.hash, "count": count] as [String: Any]
+                    } else {
+                        result = ["error": "No vault linked"]
+                    }
+
+                case "merkle_node":
+                    let nodePath = parts.count > 1 ? parts.dropFirst().joined(separator: ":") : ""
+                    if let mt = self.merkleTree, let node = mt.findNode(path: String(nodePath)) {
+                        result = node.shallowDict()
+                    } else {
+                        result = ["error": "Node not found"]
+                    }
+
+                case "vault_list":
+                    if let fa = self.folderAccess, fa.hasAccess {
+                        let files = fa.listFiles()
+                        result = ["count": files.count, "files": files] as [String: Any]
+                    } else {
+                        result = ["error": "No vault linked"]
+                    }
+
+                case "vault_read":
+                    // Command format: vault_read:relative/path.md
+                    let readPath = parts.count > 1 ? parts.dropFirst().joined(separator: ":") : ""
+                    if let fa = self.folderAccess, fa.hasAccess, !readPath.isEmpty {
+                        if let content = fa.readFile(relativePath: String(readPath)) {
+                            result = ["path": String(readPath), "content": content, "size": content.count] as [String: Any]
+                        } else {
+                            result = ["error": "File not found"]
+                        }
+                    } else {
+                        result = ["error": "No vault linked or missing path"]
+                    }
+
                 default:
-                    result = ["error": "Unknown metric: \(metric)"]
+                    result = ["error": "Unknown command"]
                 }
 
                 self.sendResponse(result)
@@ -317,6 +438,11 @@ extension BLEPeripheral: CBPeripheralManagerDelegate {
             if request.characteristic.uuid == BLEConstants.requestUUID {
                 if let data = request.value {
                     handleRequest(data)
+                }
+                peripheral.respond(to: request, withResult: .success)
+            } else if request.characteristic.uuid == BLEConstants.workoutUploadUUID {
+                if let data = request.value {
+                    handleWorkoutUpload(data)
                 }
                 peripheral.respond(to: request, withResult: .success)
             } else {

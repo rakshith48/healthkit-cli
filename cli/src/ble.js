@@ -1,4 +1,4 @@
-import { execFile } from "child_process";
+import { execFile, spawn } from "child_process";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
@@ -54,4 +54,49 @@ export function queryBLE(command) {
  */
 export function discoverBLE() {
   return queryBLE("discover");
+}
+
+/**
+ * Upload a workout JSON payload over BLE.
+ * Works when the iPhone app is backgrounded (HTTP server is down, BLE stays alive).
+ * @param {string|Buffer} payload - JSON string or Buffer to send
+ * @returns {Promise<object>} ACK from phone
+ */
+export function uploadWorkoutBLE(payload) {
+  return new Promise((resolve) => {
+    const proc = spawn(PYTHON, [BLE_CLIENT, "workout_upload"], {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+    const killTimer = setTimeout(() => {
+      proc.kill("SIGKILL");
+    }, 30_000);
+
+    proc.stdout.on("data", (c) => (stdout += c.toString("utf8")));
+    proc.stderr.on("data", (c) => (stderr += c.toString("utf8")));
+
+    proc.on("close", (code) => {
+      clearTimeout(killTimer);
+      if (code !== 0 && !stdout.trim()) {
+        resolve({
+          error: stderr.trim() || `BLE uploader exited ${code}`,
+          _source: "ble_error",
+        });
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch {
+        resolve({
+          error: "BLE uploader returned invalid JSON",
+          _source: "ble_error",
+        });
+      }
+    });
+
+    proc.stdin.write(payload);
+    proc.stdin.end();
+  });
 }

@@ -135,6 +135,10 @@ Batch form (wrap in `{ "workouts": [...] }`). Supported goals: `distance_m`, `di
 
 Requires iOS 17+ on the iPhone (WorkoutKit minimum).
 
+#### Transport fallback: HTTP → BLE
+
+`workout queue` tries HTTP first (needs the app foregrounded) and falls back to BLE (works when the app is backgrounded; only requires Bluetooth). The BLE path chunks the JSON payload into ~180-byte frames written to a dedicated characteristic, reassembled on the phone, then the same accept/reject ACK is returned over the notification channel. The CLI prints `"_source": "http"` or `"_source": "ble"` so you can tell which path succeeded.
+
 ## Claude Code Integration
 
 Install the `/health` skill:

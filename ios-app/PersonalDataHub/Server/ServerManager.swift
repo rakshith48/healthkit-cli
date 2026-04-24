@@ -15,11 +15,15 @@ class ServerManager: ObservableObject {
     let bonjour = BonjourAdvertiser()
     let blePeripheral = BLEPeripheral()
     let auth = AuthManager()
+    let folderAccess = FolderAccessManager()
 
     private var cancellables = Set<AnyCancellable>()
     private var routes: Routes?
 
     init() {
+        // Wire up the background task handler with this manager's HealthKit.
+        BackgroundSync.healthKit = healthKit
+
         httpServer.$isRunning
             .receive(on: DispatchQueue.main)
             .assign(to: &$isRunning)
@@ -55,12 +59,14 @@ class ServerManager: ObservableObject {
     func start() async {
         await healthKit.requestAuthorization()
 
-        routes = Routes(healthKit: healthKit, auth: auth)
+        routes = Routes(healthKit: healthKit, auth: auth, folderAccess: folderAccess)
         httpServer.start(routes: routes!)
         bonjour.start()
 
         // Start BLE — this survives backgrounding
         blePeripheral.setHealthKit(healthKit)
+        blePeripheral.folderAccess = folderAccess
+        blePeripheral.merkleTree = MerkleTreeBuilder(folderAccess: folderAccess)
         blePeripheral.startAdvertising()
     }
 

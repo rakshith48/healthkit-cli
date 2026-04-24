@@ -13,6 +13,7 @@ SERVICE_UUID = "A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
 REQUEST_UUID = "A1B2C3D4-00FF-7890-ABCD-EF1234567890"
 RESPONSE_UUID = "A1B2C3D4-00FE-7890-ABCD-EF1234567890"
 STATUS_UUID = "A1B2C3D4-0001-7890-ABCD-EF1234567890"
+WORKOUT_UPLOAD_UUID = "A1B2C3D4-00FD-7890-ABCD-EF1234567890"
 
 
 async def discover(timeout=10.0):
@@ -102,7 +103,78 @@ async def query_ble(command: str, timeout=15.0):
 def validate_command(command: str) -> bool:
     """Validate command format to prevent injection."""
     import re
+    if command == 'workout_upload':
+        return True
     return bool(re.match(r'^[a-z_]+:\d{1,3}$', command) or command in ('status', 'discover'))
+
+
+async def upload_workout(payload: bytes, timeout: float = 20.0) -> dict:
+    """Upload a JSON workout spec (bytes) to the iPhone via BLE.
+
+    Wire format matches iOS `WorkoutUploadAssembler`:
+        First write: [4-byte BE uint32 total_length][first chunk of data]
+        Subsequent writes: [chunk of data]
+    Phone replies via the response characteristic with the same chunked framing
+    used for health queries.
+    """
+    device = await discover(timeout=5.0)
+    if not device:
+        return {"error": "No DataHub BLE device found. Is the app installed on your iPhone?",
+                "_source": "ble_error"}
+
+    response_data = bytearray()
+    response_length = None
+    response_done = asyncio.Event()
+
+    def notification_handler(sender, data: bytearray):
+        nonlocal response_data, response_length
+        if response_length is None and len(data) >= 4:
+            response_length = struct.unpack(">I", data[:4])[0]
+            response_data.extend(data[4:])
+        elif len(data) == 4 and struct.unpack(">I", data)[0] == 0:
+            response_done.set()
+            return
+        else:
+            response_data.extend(data)
+        if response_length is not None and len(response_data) >= response_length:
+            response_done.set()
+
+    try:
+        async with BleakClient(device, timeout=10.0) as client:
+            await client.start_notify(RESPONSE_UUID, notification_handler)
+
+            # Conservative chunk size. BLE MTU defaults to 23 but iOS negotiates
+            # higher — 180 bytes fits all ATT MTU configurations we've seen.
+            chunk_size = 180
+
+            # First write: 4-byte length prefix + as much data as fits
+            header = struct.pack(">I", len(payload))
+            first = header + payload[: chunk_size - 4]
+            await client.write_gatt_char(WORKOUT_UPLOAD_UUID, first, response=True)
+
+            # Continuation writes
+            offset = chunk_size - 4
+            while offset < len(payload):
+                end = min(offset + chunk_size, len(payload))
+                await client.write_gatt_char(WORKOUT_UPLOAD_UUID, payload[offset:end], response=True)
+                offset = end
+
+            # Await ACK
+            try:
+                await asyncio.wait_for(response_done.wait(), timeout=timeout)
+            except asyncio.TimeoutError:
+                return {"error": "No ACK from phone within timeout", "_source": "ble_error"}
+
+            raw = bytes(response_data[:response_length]) if response_length else bytes(response_data)
+            try:
+                result = json.loads(raw.decode("utf-8", errors="replace"))
+                result.setdefault("_source", "ble")
+                return result
+            except json.JSONDecodeError:
+                return {"error": "Invalid ACK payload from device", "_source": "ble_error"}
+
+    except Exception as e:
+        return {"error": f"BLE upload failed: {e}", "_source": "ble_error"}
 
 
 async def main():
@@ -123,6 +195,16 @@ async def main():
         else:
             print(json.dumps({"found": False, "error": "No DataHub BLE device found"}))
             sys.exit(1)
+    elif command == "workout_upload":
+        payload = sys.stdin.buffer.read()
+        if not payload:
+            print(json.dumps({"error": "No payload on stdin", "_source": "ble_error"}))
+            sys.exit(1)
+        if len(payload) > 256 * 1024:
+            print(json.dumps({"error": "Payload exceeds 256 KB limit", "_source": "ble_error"}))
+            sys.exit(1)
+        result = await upload_workout(payload)
+        print(json.dumps(result, indent=2))
     else:
         result = await query_ble(command)
         print(json.dumps(result, indent=2))

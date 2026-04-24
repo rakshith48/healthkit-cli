@@ -1,98 +1,90 @@
 import SwiftUI
 import WorkoutKit
+import os
+
+@available(iOS 17.0, *)
+private let log = Logger(subsystem: "com.personaldatahub.app", category: "workout-preview")
 
 @available(iOS 17.0, *)
 struct WorkoutQueueView: View {
     @ObservedObject private var store = WorkoutQueueStore.shared
+
+    // Non-optional plan so `.workoutPreview` can be attached stably. Initialised
+    // with a tiny placeholder that never gets shown — replaced before
+    // `showPreview` flips to true.
+    @State private var previewPlan: WorkoutPlan = WorkoutQueueView.placeholderPlan()
     @State private var previewingSpec: WorkoutSpec?
-    @State private var previewPlan: WorkoutPlan?
     @State private var showPreview = false
     @State private var buildError: String?
+
+    private static func placeholderPlan() -> WorkoutPlan {
+        WorkoutPlan(
+            .custom(
+                CustomWorkout(
+                    activity: .running,
+                    location: .outdoor,
+                    displayName: "Loading…",
+                    blocks: []
+                )
+            )
+        )
+    }
 
     var body: some View {
         List {
             if store.pending.isEmpty {
-                Text("No pending workouts. Push from your Mac with `healthkit-cli workout queue`.")
+                Text("No workouts queued. Push from your Mac with `healthkit-cli workout queue`.")
                     .font(.footnote)
                     .foregroundColor(.secondary)
             } else {
-                Section("Pending (\(store.pending.count))") {
+                Section("Queued (\(store.pending.count))") {
                     ForEach(store.pending) { q in
                         WorkoutRow(
                             queued: q,
                             onPreview: { openPreview(for: q.spec) },
-                            onDismiss: { store.markDismissed(id: q.id) }
+                            onDismiss: { store.remove(id: q.id) }
                         )
                     }
                 }
             }
 
-            let saved = store.queue.filter { $0.status == "saved" }
-            if !saved.isEmpty {
-                Section("Saved (\(saved.count))") {
-                    ForEach(saved) { q in
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
-                            Text(q.spec.displayName).font(.subheadline)
-                            Spacer()
-                            Button(role: .destructive) {
-                                store.remove(id: q.id)
-                            } label: {
-                                Image(systemName: "trash")
-                            }
-                        }
-                    }
-                }
-            }
-
             if let err = buildError {
-                Section {
+                Section("Error") {
                     Text(err)
                         .font(.caption)
                         .foregroundColor(.red)
+                        .textSelection(.enabled)
                 }
             }
         }
         .navigationTitle("Workouts")
-        .modifier(WorkoutPreviewSheet(plan: previewPlan, isPresented: $showPreview))
-        .onChange(of: showPreview) { visible in
-            // When the preview closes, mark the workout as saved.
-            // (Apple doesn't expose a "was it actually saved?" callback —
-            // user closing the sheet is the best signal we get.)
-            if !visible, let spec = previewingSpec {
-                store.markSaved(id: spec.id)
+        .workoutPreview(previewPlan, isPresented: $showPreview)
+        .onChange(of: showPreview) { _, visible in
+            log.info("showPreview changed to \(visible)")
+            // Apple doesn't expose a "did user actually save?" callback, so we
+            // keep the workout in pending. The user taps "Mark Saved" explicitly
+            // once they've confirmed the workout landed on their Watch.
+            if !visible {
                 previewingSpec = nil
-                previewPlan = nil
             }
         }
     }
 
     private func openPreview(for spec: WorkoutSpec) {
         buildError = nil
+        log.info("openPreview tapped for: \(spec.displayName)")
         do {
             let workout = try WorkoutBuilder.build(from: spec)
+            let name = workout.displayName ?? "<no name>"
+            log.info("Built CustomWorkout '\(name)' with \(workout.blocks.count) blocks")
             previewingSpec = spec
             previewPlan = WorkoutPlan(.custom(workout))
             showPreview = true
+            log.info("showPreview set to true")
         } catch {
-            buildError = "Failed to build '\(spec.displayName)': \(error.localizedDescription)"
-        }
-    }
-}
-
-/// Conditionally apply `.workoutPreview` — the modifier requires a non-optional
-/// `WorkoutPlan`, so wrap it in a ViewModifier that only attaches once a plan
-/// has been built.
-@available(iOS 17.0, *)
-private struct WorkoutPreviewSheet: ViewModifier {
-    let plan: WorkoutPlan?
-    @Binding var isPresented: Bool
-
-    func body(content: Content) -> some View {
-        if let plan = plan {
-            content.workoutPreview(plan, isPresented: $isPresented)
-        } else {
-            content
+            let msg = "Failed to build '\(spec.displayName)': \(error.localizedDescription)"
+            log.error("\(msg)")
+            buildError = msg
         }
     }
 }
@@ -104,7 +96,7 @@ private struct WorkoutRow: View {
     let onDismiss: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(queued.spec.displayName)
                 .font(.headline)
             HStack {
@@ -114,15 +106,17 @@ private struct WorkoutRow: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
-            HStack {
+            HStack(spacing: 8) {
                 Button(action: onPreview) {
                     Label("Preview + Save", systemImage: "arrow.up.forward.app")
                         .font(.footnote)
                 }
                 .buttonStyle(.borderedProminent)
 
+                Spacer()
+
                 Button(role: .destructive, action: onDismiss) {
-                    Label("Dismiss", systemImage: "xmark")
+                    Image(systemName: "xmark.circle")
                         .font(.footnote)
                 }
                 .buttonStyle(.bordered)
