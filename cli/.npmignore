@@ -1,0 +1,13 @@
+# Python bytecode — never ship compiled artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Tests — not useful to consumers
+tests/
+
+# Dev noise
+.DS_Store
+*.log
+node_modules/

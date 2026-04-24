@@ -35,7 +35,8 @@
   },
   "license": "MIT",
   "files": [
-    "src/",
+    "src/*.js",
+    "src/*.py",
     "skills/"
   ]
 }
