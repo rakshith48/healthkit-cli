@@ -7,7 +7,7 @@ import { query, status } from "./client.js";
 import { pair } from "./auth.js";
 import { sync, watchVault } from "./vault.js";
 import { queueWorkout, listQueue, clearQueue } from "./workout.js";
-import { existsSync, mkdirSync, copyFileSync } from "fs";
+import { existsSync, mkdirSync, copyFileSync, rmSync } from "fs";
 import { homedir } from "os";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -31,11 +31,11 @@ program
 // --- install-skill ---
 program
   .command("install-skill")
-  .description("Install the /health skill for Claude Code")
+  .description("Install the healthkit-cli skill for Claude Code (covers both health queries and workout push)")
   .action(() => {
     const __dirname = dirname(fileURLToPath(import.meta.url));
-    const source = join(__dirname, "..", "skills", "health", "SKILL.md");
-    const destDir = join(homedir(), ".claude", "skills", "health");
+    const source = join(__dirname, "..", "skills", "healthkit-cli", "SKILL.md");
+    const destDir = join(homedir(), ".claude", "skills", "healthkit-cli");
     const dest = join(destDir, "SKILL.md");
 
     if (!existsSync(source)) {
@@ -45,10 +45,25 @@ program
 
     mkdirSync(destDir, { recursive: true, mode: 0o700 });
     copyFileSync(source, dest);
+
+    // Clean up the old `health` skill directory if it exists, since the
+    // comprehensive `healthkit-cli` skill supersedes it.
+    const oldSkillDir = join(homedir(), ".claude", "skills", "health");
+    let removedOld = false;
+    if (existsSync(oldSkillDir)) {
+      try {
+        rmSync(oldSkillDir, { recursive: true, force: true });
+        removedOld = true;
+      } catch {
+        // Non-fatal — user can delete manually
+      }
+    }
+
     console.log(JSON.stringify({
       installed: true,
       path: dest,
-      message: "Claude Code skill installed. Use /health in Claude Code to query health data."
+      removed_old_health_skill: removedOld,
+      message: "Claude Code skill installed. Covers health queries and workout push."
     }, null, 2));
   });
 
