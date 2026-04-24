@@ -34,8 +34,8 @@ final class ModelTests: XCTestCase {
     }
 
     func testWorkoutSampleOptionalHeartRate() throws {
-        let withHR = WorkoutSample(date: "2026-03-21", type: "Running", durationMin: 30, calories: 350, heartRateAvg: 155)
-        let withoutHR = WorkoutSample(date: "2026-03-21", type: "Walking", durationMin: 45, calories: 200, heartRateAvg: nil)
+        let withHR = WorkoutSample(date: "2026-03-21", type: "Running", durationMin: 30, calories: 350, distanceKm: 5.0, heartRateAvg: 155, heartRateMax: 175, paceAvgMinPerKm: "6:00", source: "Apple Watch", splits: nil)
+        let withoutHR = WorkoutSample(date: "2026-03-21", type: "Walking", durationMin: 45, calories: 200, distanceKm: nil, heartRateAvg: nil, heartRateMax: nil, paceAvgMinPerKm: nil, source: nil, splits: nil)
 
         let encoder = JSONEncoder()
         let data1 = try encoder.encode(withHR)

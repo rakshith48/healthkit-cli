@@ -1,0 +1,35 @@
+{
+  "workouts": [
+    {
+      "displayName": "P1 W7 Tue · Tempo 9km (6k @ 5:00)",
+      "activity": "running", "location": "outdoor",
+      "warmup": { "goal": { "distance_km": 1.5 } },
+      "blocks": [{ "iterations": 1, "steps": [
+        { "purpose": "work", "goal": { "distance_km": 6 }, "alert": { "type": "pace", "minPace": "4:55", "maxPace": "5:05" } }
+      ]}],
+      "cooldown": { "goal": { "distance_km": 1.5 } }
+    },
+    {
+      "displayName": "P1 W7 Thu · KCTC 3x1.5km @ 4:40",
+      "activity": "running", "location": "outdoor",
+      "warmup": { "goal": { "distance_km": 1.5 } },
+      "blocks": [{ "iterations": 3, "steps": [
+        { "purpose": "work", "goal": { "distance_m": 1500 }, "alert": { "type": "pace", "minPace": "4:35", "maxPace": "4:45" } },
+        { "purpose": "recovery", "goal": { "time_s": 240 } }
+      ]}],
+      "cooldown": { "goal": { "distance_km": 1 } }
+    },
+    {
+      "displayName": "P1 W7 Sat · PEAK Long 18km (last 4k @ 5:00 — money)",
+      "activity": "running", "location": "outdoor",
+      "blocks": [
+        { "iterations": 1, "steps": [
+          { "purpose": "work", "goal": { "distance_km": 14 }, "alert": { "type": "pace", "minPace": "5:45", "maxPace": "6:00" } }
+        ]},
+        { "iterations": 1, "steps": [
+          { "purpose": "work", "goal": { "distance_km": 4 }, "alert": { "type": "pace", "minPace": "4:55", "maxPace": "5:05" } }
+        ]}
+      ]
+    }
+  ]
+}

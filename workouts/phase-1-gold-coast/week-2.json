@@ -1,0 +1,65 @@
+{
+  "workouts": [
+    {
+      "displayName": "P1 W2 Tue · Tempo 6km (3k @ 5:20)",
+      "activity": "running",
+      "location": "outdoor",
+      "warmup": { "goal": { "distance_km": 1.5 } },
+      "blocks": [
+        {
+          "iterations": 1,
+          "steps": [
+            {
+              "purpose": "work",
+              "goal": { "distance_km": 3 },
+              "alert": { "type": "pace", "minPace": "5:15", "maxPace": "5:25" }
+            }
+          ]
+        }
+      ],
+      "cooldown": { "goal": { "distance_km": 1.5 } }
+    },
+    {
+      "displayName": "P1 W2 Thu · KCTC 3x800 + 6x200",
+      "activity": "running",
+      "location": "outdoor",
+      "warmup": { "goal": { "distance_km": 1.5 } },
+      "blocks": [
+        {
+          "iterations": 3,
+          "steps": [
+            { "purpose": "work", "goal": { "distance_m": 800 }, "alert": { "type": "pace", "minPace": "4:05", "maxPace": "4:15" } },
+            { "purpose": "recovery", "goal": { "time_s": 120 } }
+          ]
+        },
+        {
+          "iterations": 6,
+          "steps": [
+            { "purpose": "work", "goal": { "distance_m": 200 }, "alert": { "type": "pace", "minPace": "3:15", "maxPace": "3:25" } },
+            { "purpose": "recovery", "goal": { "time_s": 75 } }
+          ]
+        }
+      ],
+      "cooldown": { "goal": { "distance_km": 1 } }
+    },
+    {
+      "displayName": "P1 W2 Sat · Long 11km (last 2k @ 5:20)",
+      "activity": "running",
+      "location": "outdoor",
+      "blocks": [
+        {
+          "iterations": 1,
+          "steps": [
+            { "purpose": "work", "goal": { "distance_km": 9 }, "alert": { "type": "pace", "minPace": "6:00", "maxPace": "6:15" } }
+          ]
+        },
+        {
+          "iterations": 1,
+          "steps": [
+            { "purpose": "work", "goal": { "distance_km": 2 }, "alert": { "type": "pace", "minPace": "5:15", "maxPace": "5:25" } }
+          ]
+        }
+      ]
+    }
+  ]
+}

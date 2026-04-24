@@ -1,0 +1,28 @@
+{
+  "workouts": [
+    {
+      "displayName": "P1 W5 Tue · Easy 5km (cutback)",
+      "activity": "running", "location": "outdoor",
+      "blocks": [{ "iterations": 1, "steps": [
+        { "purpose": "work", "goal": { "distance_km": 5 }, "alert": { "type": "pace", "minPace": "5:55", "maxPace": "6:15" } }
+      ]}]
+    },
+    {
+      "displayName": "P1 W5 Thu · KCTC 6x400",
+      "activity": "running", "location": "outdoor",
+      "warmup": { "goal": { "distance_km": 1.5 } },
+      "blocks": [{ "iterations": 6, "steps": [
+        { "purpose": "work", "goal": { "distance_m": 400 }, "alert": { "type": "pace", "minPace": "3:55", "maxPace": "4:05" } },
+        { "purpose": "recovery", "goal": { "time_s": 120 } }
+      ]}],
+      "cooldown": { "goal": { "distance_km": 1 } }
+    },
+    {
+      "displayName": "P1 W5 Sat · Long 12km Easy (cutback)",
+      "activity": "running", "location": "outdoor",
+      "blocks": [{ "iterations": 1, "steps": [
+        { "purpose": "work", "goal": { "distance_km": 12 }, "alert": { "type": "pace", "minPace": "5:55", "maxPace": "6:15" } }
+      ]}]
+    }
+  ]
+}

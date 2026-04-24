@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var serverManager: ServerManager
+    @ObservedObject private var workoutQueue = WorkoutQueueStore.shared
+    @State private var showFolderPicker = false
 
     var body: some View {
         NavigationView {
@@ -66,6 +68,53 @@ struct ContentView: View {
                     }
                 }
 
+                Section("Obsidian Vault") {
+                    if serverManager.folderAccess.hasAccess {
+                        HStack {
+                            Text("Vault")
+                            Spacer()
+                            Text(serverManager.folderAccess.vaultPath)
+                                .foregroundColor(.green)
+                        }
+                        HStack {
+                            Text("Markdown files")
+                            Spacer()
+                            Text("\(serverManager.folderAccess.fileCount)")
+                                .foregroundColor(.secondary)
+                        }
+                        Button("Change Vault") {
+                            showFolderPicker = true
+                        }
+                    } else {
+                        Button("Link Obsidian Vault") {
+                            showFolderPicker = true
+                        }
+                        .font(.headline)
+                    }
+                }
+
+                Section("Workouts") {
+                    if #available(iOS 17.0, *) {
+                        NavigationLink {
+                            WorkoutQueueView()
+                        } label: {
+                            HStack {
+                                Text("Pending")
+                                Spacer()
+                                if workoutQueue.pending.isEmpty {
+                                    Text("0").foregroundColor(.secondary)
+                                } else {
+                                    Text("\(workoutQueue.pending.count)")
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                        }
+                    } else {
+                        Text("Requires iOS 17+").foregroundColor(.secondary)
+                    }
+                }
+
                 Section("HealthKit") {
                     HStack {
                         Text("Authorization")
@@ -120,6 +169,11 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Data Hub")
+        }
+        .sheet(isPresented: $showFolderPicker) {
+            FolderPicker { url in
+                serverManager.folderAccess.saveAccess(to: url)
+            }
         }
         .task {
             await serverManager.start()

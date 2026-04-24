@@ -1,0 +1,75 @@
+{
+  "workouts": [
+    {
+      "displayName": "P1 W1 Tue · Easy 5km",
+      "activity": "running",
+      "location": "outdoor",
+      "blocks": [
+        {
+          "iterations": 1,
+          "steps": [
+            {
+              "purpose": "work",
+              "goal": { "distance_km": 5 },
+              "alert": { "type": "pace", "minPace": "6:00", "maxPace": "6:30" }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "displayName": "P1 W1 Thu · KCTC 2x800 + 4x200",
+      "activity": "running",
+      "location": "outdoor",
+      "warmup": { "goal": { "distance_km": 1.5 } },
+      "blocks": [
+        {
+          "iterations": 2,
+          "steps": [
+            {
+              "purpose": "work",
+              "goal": { "distance_m": 800 },
+              "alert": { "type": "pace", "minPace": "4:10", "maxPace": "4:20" }
+            },
+            {
+              "purpose": "recovery",
+              "goal": { "time_s": 120 }
+            }
+          ]
+        },
+        {
+          "iterations": 4,
+          "steps": [
+            {
+              "purpose": "work",
+              "goal": { "distance_m": 200 },
+              "alert": { "type": "pace", "minPace": "3:20", "maxPace": "3:30" }
+            },
+            {
+              "purpose": "recovery",
+              "goal": { "time_s": 90 }
+            }
+          ]
+        }
+      ],
+      "cooldown": { "goal": { "distance_km": 1 } }
+    },
+    {
+      "displayName": "P1 W1 Sat · Long 10km",
+      "activity": "running",
+      "location": "outdoor",
+      "blocks": [
+        {
+          "iterations": 1,
+          "steps": [
+            {
+              "purpose": "work",
+              "goal": { "distance_km": 10 },
+              "alert": { "type": "pace", "minPace": "6:00", "maxPace": "6:15" }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

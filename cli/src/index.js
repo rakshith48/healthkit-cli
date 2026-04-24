@@ -5,6 +5,8 @@ import { discover } from "./discover.js";
 import { discoverBLE } from "./ble.js";
 import { query, status } from "./client.js";
 import { pair } from "./auth.js";
+import { sync, watchVault } from "./vault.js";
+import { queueWorkout, listQueue, clearQueue } from "./workout.js";
 import { existsSync, mkdirSync, copyFileSync } from "fs";
 import { homedir } from "os";
 import { join, dirname } from "path";
@@ -153,6 +155,51 @@ health
       `workouts:${days}`
     );
     console.log(JSON.stringify(result, null, 2));
+  });
+
+// --- vault ---
+const vault = program
+  .command("vault")
+  .description("Sync Obsidian vault between iPhone and Mac");
+
+vault
+  .command("sync")
+  .description("One-time sync — pulls new notes from phone, pushes new notes from Mac")
+  .action(async () => {
+    await sync();
+  });
+
+vault
+  .command("watch")
+  .description("Watch for changes and auto-sync bidirectionally")
+  .action(async () => {
+    await watchVault();
+  });
+
+// --- workout ---
+const workout = program
+  .command("workout")
+  .description("Push custom workouts to your iPhone — appear in 'Workouts' tab for one-tap save to Apple Watch");
+
+workout
+  .command("queue <file>")
+  .description("Push a workout spec (JSON) or a batch plan to the iPhone queue")
+  .action(async (file) => {
+    await queueWorkout(file);
+  });
+
+workout
+  .command("list")
+  .description("Show the current iPhone workout queue (pending + saved)")
+  .action(async () => {
+    await listQueue();
+  });
+
+workout
+  .command("clear [id]")
+  .description("Remove a workout by id, or clear all if no id given")
+  .action(async (id) => {
+    await clearQueue(id);
   });
 
 program.parse();

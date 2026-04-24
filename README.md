@@ -99,6 +99,41 @@ healthkit-cli status
 | `healthkit-cli health calories --days N` | Active calories per day (kcal) |
 | `healthkit-cli health distance --days N` | Walking/running distance per day (km) |
 | `healthkit-cli health workouts --days N` | Workouts with distance, HR, pace, splits |
+| `healthkit-cli workout queue <file>` | Push a custom workout spec (JSON) to the iPhone queue |
+| `healthkit-cli workout list` | Show the queue (pending + saved) |
+| `healthkit-cli workout clear [id]` | Remove one queued workout or clear all |
+
+### Custom Workouts (WorkoutKit)
+
+The `workout` subcommand pushes a structured workout spec to the iPhone. It appears under the app's **Workouts** tab. Tap "Preview + Save" and Apple's native preview sheet lets you save the workout directly to the Workout app on your Apple Watch.
+
+Example spec (`tempo.json`):
+
+```json
+{
+  "displayName": "Wk 3 Tempo 7km",
+  "activity": "running",
+  "location": "outdoor",
+  "warmup": { "goal": { "distance_km": 1.5 } },
+  "blocks": [
+    {
+      "iterations": 1,
+      "steps": [
+        {
+          "purpose": "work",
+          "goal": { "distance_km": 4 },
+          "alert": { "type": "pace", "minPace": "5:10", "maxPace": "5:20" }
+        }
+      ]
+    }
+  ],
+  "cooldown": { "goal": { "distance_km": 1.5 } }
+}
+```
+
+Batch form (wrap in `{ "workouts": [...] }`). Supported goals: `distance_m`, `distance_km`, `time_s`, `time_min`, `energy_kcal`. Supported alerts: `pace` (minPace/maxPace), `speed_mps`, `heart_rate` (min/max bpm), `heart_rate_zone` (1-5).
+
+Requires iOS 17+ on the iPhone (WorkoutKit minimum).
 
 ## Claude Code Integration
 

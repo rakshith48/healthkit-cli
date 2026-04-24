@@ -10,11 +10,15 @@ private let RATE_LIMIT_PER_MIN = 60
 class Routes {
     let healthKit: HealthKitManager
     let auth: AuthManager
+    let folderAccess: FolderAccessManager
+    let merkleTree: MerkleTreeBuilder
     private var requestCounts: [String: (count: Int, resetAt: Date)] = [:]
 
-    init(healthKit: HealthKitManager, auth: AuthManager) {
+    init(healthKit: HealthKitManager, auth: AuthManager, folderAccess: FolderAccessManager) {
         self.healthKit = healthKit
         self.auth = auth
+        self.folderAccess = folderAccess
+        self.merkleTree = MerkleTreeBuilder(folderAccess: folderAccess)
     }
 
     func register(on server: HttpServer) {
@@ -27,6 +31,21 @@ class Routes {
         server["/health/metrics"] = authenticated(healthMetricsHandler)
         server["/health/workouts"] = authenticated(workoutsHandler)
         server["/sync/bulk"] = authenticated(syncBulkHandler)
+
+        // Vault endpoints
+        server["/vault/list"] = authenticated(vaultListHandler)
+        server["/vault/read"] = authenticated(vaultReadHandler)
+        server["/vault/write"] = authenticated(vaultWriteHandler)
+
+        // Merkle tree endpoints
+        server["/vault/merkle/root"] = authenticated(merkleRootHandler)
+        server["/vault/merkle/node"] = authenticated(merkleNodeHandler)
+        server["/vault/merkle/diff"] = authenticated(merkleDiffHandler)
+
+        // Workout queue endpoints (WorkoutKit, iOS 17+)
+        server.POST["/workouts/queue"] = authenticated(workoutQueuePostHandler)
+        server.GET["/workouts/queue"] = authenticated(workoutQueueListHandler)
+        server.DELETE["/workouts/queue"] = authenticated(workoutQueueDeleteHandler)
 
         #if DEBUG
         server["/debug/sleep-raw"] = authenticated(sleepRawHandler)
@@ -383,6 +402,262 @@ class Routes {
         }
     }
     #endif
+
+    // MARK: - /vault/list
+
+    private var vaultListHandler: ((HttpRequest) -> HttpResponse) {
+        { [weak self] request in
+            guard let self, self.checkRateLimit(for: request.address ?? "unknown") else {
+                return self?.rateLimitResponse() ?? .internalServerError
+            }
+            guard self.folderAccess.hasAccess else {
+                return self.errorResponse("No vault linked. Open the app and tap 'Link Obsidian Vault'.")
+            }
+            let files = self.folderAccess.listFiles()
+            guard let data = try? JSONSerialization.data(withJSONObject: ["files": files, "count": files.count], options: .sortedKeys) else {
+                return .internalServerError
+            }
+            return .raw(200, "OK", ["Content-Type": "application/json"]) { writer in
+                try writer.write(data)
+            }
+        }
+    }
+
+    // MARK: - /vault/read?path=relative/path.md
+
+    private var vaultReadHandler: ((HttpRequest) -> HttpResponse) {
+        { [weak self] request in
+            guard let self, self.checkRateLimit(for: request.address ?? "unknown") else {
+                return self?.rateLimitResponse() ?? .internalServerError
+            }
+            guard self.folderAccess.hasAccess else {
+                return self.errorResponse("No vault linked.")
+            }
+            guard let rawPath = self.stringParam(request, "path"), !rawPath.isEmpty else {
+                return self.errorResponse("Missing 'path' parameter", code: 400)
+            }
+            let path = rawPath.removingPercentEncoding ?? rawPath
+            // Prevent directory traversal
+            guard !path.contains("..") else {
+                return self.errorResponse("Invalid path", code: 400)
+            }
+            guard let content = self.folderAccess.readFile(relativePath: path) else {
+                return self.errorResponse("File not found", code: 404)
+            }
+            let response: [String: Any] = ["path": path, "content": content, "size": content.count]
+            guard let data = try? JSONSerialization.data(withJSONObject: response, options: .sortedKeys) else {
+                return .internalServerError
+            }
+            return .raw(200, "OK", ["Content-Type": "application/json"]) { writer in
+                try writer.write(data)
+            }
+        }
+    }
+
+    // MARK: - /vault/write (POST, JSON body: {"path": "...", "content": "..."})
+
+    private var vaultWriteHandler: ((HttpRequest) -> HttpResponse) {
+        { [weak self] request in
+            guard let self, self.checkRateLimit(for: request.address ?? "unknown") else {
+                return self?.rateLimitResponse() ?? .internalServerError
+            }
+            guard self.folderAccess.hasAccess else {
+                return self.errorResponse("No vault linked.")
+            }
+            let bodyData = Data(request.body.map { UInt8($0) })
+            guard let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: String],
+                  let path = json["path"], !path.isEmpty,
+                  let content = json["content"] else {
+                return self.errorResponse("Missing 'path' or 'content' in body", code: 400)
+            }
+            guard !path.contains("..") else {
+                return self.errorResponse("Invalid path", code: 400)
+            }
+            let success = self.folderAccess.writeFile(relativePath: path, content: content)
+            let response: [String: Any] = ["path": path, "written": success]
+            guard let data = try? JSONSerialization.data(withJSONObject: response, options: .sortedKeys) else {
+                return .internalServerError
+            }
+            return .raw(success ? 200 : 500, success ? "OK" : "Error", ["Content-Type": "application/json"]) { writer in
+                try writer.write(data)
+            }
+        }
+    }
+
+    // MARK: - /workouts/queue (POST) — push a new workout spec
+
+    private var workoutQueuePostHandler: ((HttpRequest) -> HttpResponse) {
+        { [weak self] request in
+            guard let self, self.checkRateLimit(for: request.address ?? "unknown") else {
+                return self?.rateLimitResponse() ?? .internalServerError
+            }
+
+            let bodyData = Data(request.body.map { UInt8($0) })
+
+            // Accept either a single spec or an array of specs under {"workouts": [...]}
+            let decoder = JSONDecoder()
+            var specs: [WorkoutSpec] = []
+
+            if let single = try? decoder.decode(WorkoutSpec.self, from: bodyData) {
+                specs = [single]
+            } else if let wrapped = try? decoder.decode(WorkoutQueueBatch.self, from: bodyData) {
+                specs = wrapped.workouts
+            } else {
+                return self.errorResponse("Invalid workout spec JSON", code: 400)
+            }
+
+            if #available(iOS 17.0, *) {
+                // Validate each spec builds before persisting — catch errors early
+                var errors: [[String: String]] = []
+                var accepted: [String] = []
+                for spec in specs {
+                    do {
+                        _ = try WorkoutBuilder.build(from: spec)
+                        WorkoutQueueStore.shared.enqueue(spec)
+                        accepted.append(spec.id)
+                    } catch {
+                        errors.append(["id": spec.id, "error": error.localizedDescription])
+                    }
+                }
+                let response: [String: Any] = [
+                    "accepted": accepted,
+                    "rejected": errors,
+                    "pending_count": WorkoutQueueStore.shared.pending.count + accepted.count
+                ]
+                guard let data = try? JSONSerialization.data(withJSONObject: response, options: .sortedKeys) else {
+                    return .internalServerError
+                }
+                return .raw(200, "OK", ["Content-Type": "application/json"]) { writer in
+                    try writer.write(data)
+                }
+            } else {
+                return self.errorResponse("WorkoutKit requires iOS 17+", code: 400)
+            }
+        }
+    }
+
+    // MARK: - /workouts/queue (GET) — list queued workouts
+
+    private var workoutQueueListHandler: ((HttpRequest) -> HttpResponse) {
+        { [weak self] request in
+            guard let self, self.checkRateLimit(for: request.address ?? "unknown") else {
+                return self?.rateLimitResponse() ?? .internalServerError
+            }
+            if #available(iOS 17.0, *) {
+                let queue = WorkoutQueueStore.shared.queue
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                guard let data = try? encoder.encode(["queue": queue]) else {
+                    return .internalServerError
+                }
+                return .raw(200, "OK", ["Content-Type": "application/json"]) { writer in
+                    try writer.write(data)
+                }
+            } else {
+                return self.errorResponse("WorkoutKit requires iOS 17+", code: 400)
+            }
+        }
+    }
+
+    // MARK: - /workouts/queue (DELETE) — clear or remove one by ?id=
+
+    private var workoutQueueDeleteHandler: ((HttpRequest) -> HttpResponse) {
+        { [weak self] request in
+            guard let self, self.checkRateLimit(for: request.address ?? "unknown") else {
+                return self?.rateLimitResponse() ?? .internalServerError
+            }
+            if #available(iOS 17.0, *) {
+                if let id = self.stringParam(request, "id") {
+                    WorkoutQueueStore.shared.remove(id: id)
+                    let body: [String: Any] = ["removed": id]
+                    guard let data = try? JSONSerialization.data(withJSONObject: body) else { return .internalServerError }
+                    return .raw(200, "OK", ["Content-Type": "application/json"]) { writer in
+                        try writer.write(data)
+                    }
+                } else {
+                    WorkoutQueueStore.shared.clearAll()
+                    let body: [String: Any] = ["cleared": true]
+                    guard let data = try? JSONSerialization.data(withJSONObject: body) else { return .internalServerError }
+                    return .raw(200, "OK", ["Content-Type": "application/json"]) { writer in
+                        try writer.write(data)
+                    }
+                }
+            } else {
+                return self.errorResponse("WorkoutKit requires iOS 17+", code: 400)
+            }
+        }
+    }
+
+    // MARK: - /vault/merkle/root
+
+    private var merkleRootHandler: ((HttpRequest) -> HttpResponse) {
+        { [weak self] request in
+            guard let self, self.checkRateLimit(for: request.address ?? "unknown") else {
+                return self?.rateLimitResponse() ?? .internalServerError
+            }
+            guard let root = self.merkleTree.getRoot() else {
+                return self.errorResponse("No vault linked")
+            }
+            let count = self.countNodes(root)
+            let response: [String: Any] = ["hash": root.hash, "count": count]
+            guard let data = try? JSONSerialization.data(withJSONObject: response, options: .sortedKeys) else {
+                return .internalServerError
+            }
+            return .raw(200, "OK", ["Content-Type": "application/json"]) { writer in
+                try writer.write(data)
+            }
+        }
+    }
+
+    // MARK: - /vault/merkle/node?path=
+
+    private var merkleNodeHandler: ((HttpRequest) -> HttpResponse) {
+        { [weak self] request in
+            guard let self, self.checkRateLimit(for: request.address ?? "unknown") else {
+                return self?.rateLimitResponse() ?? .internalServerError
+            }
+            let rawPath = self.stringParam(request, "path") ?? ""
+            let path = rawPath.removingPercentEncoding ?? rawPath
+            guard let node = self.merkleTree.findNode(path: path) else {
+                return self.errorResponse("Node not found", code: 404)
+            }
+            guard let data = try? JSONSerialization.data(withJSONObject: node.shallowDict(), options: .sortedKeys) else {
+                return .internalServerError
+            }
+            return .raw(200, "OK", ["Content-Type": "application/json"]) { writer in
+                try writer.write(data)
+            }
+        }
+    }
+
+    // MARK: - /vault/merkle/diff (POST)
+
+    private var merkleDiffHandler: ((HttpRequest) -> HttpResponse) {
+        { [weak self] request in
+            guard let self, self.checkRateLimit(for: request.address ?? "unknown") else {
+                return self?.rateLimitResponse() ?? .internalServerError
+            }
+            let bodyData = Data(request.body.map { UInt8($0) })
+            guard let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+                  let path = json["path"] as? String,
+                  let children = json["children"] as? [String: String] else {
+                return self.errorResponse("Invalid request", code: 400)
+            }
+            let result = self.merkleTree.diff(path: path, clientHashes: children)
+            guard let data = try? JSONSerialization.data(withJSONObject: result, options: .sortedKeys) else {
+                return .internalServerError
+            }
+            return .raw(200, "OK", ["Content-Type": "application/json"]) { writer in
+                try writer.write(data)
+            }
+        }
+    }
+
+    private func countNodes(_ node: MerkleNode) -> Int {
+        if !node.isDir { return 1 }
+        return node.children.reduce(0) { $0 + countNodes($1) }
+    }
 
     // MARK: - Helpers
 

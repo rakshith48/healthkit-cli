@@ -2,7 +2,7 @@ name: PersonalDataHub
 options:
   bundleIdPrefix: com.personaldatahub
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "17.0"
   xcodeVersion: "16.0"
 
 packages:
@@ -21,10 +21,11 @@ targets:
         INFOPLIST_FILE: PersonalDataHub/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.personaldatahub.app
         MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1"
+        CURRENT_PROJECT_VERSION: "2"
         SWIFT_VERSION: "5.9"
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - package: Swifter
     entitlements:
